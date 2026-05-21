@@ -56,6 +56,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Authentification au registry GitHub avec un token automatique
+      # secrets.GITHUB_TOKEN est généré automatiquement par GitHub Actions
       - run: echo "${{secrets.GITHUB_TOKEN}}" | docker login ghcr.io -u "${{github.actor}}" --password-stdin
 
       # AJOUT — Build de l'image avec le nom versionné produit par versioning
@@ -93,3 +94,31 @@ jobs:
         run: |
           echo "## 🌐 API tests using ${{needs.versioning.outputs.imageName}}" >> $GITHUB_STEP_SUMMARY
           go test ./test/apitests
+
+  # AJOUT — Déploiement continu via GitOps
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: [api-tests, versioning] # Attend que tous les tests soient passés
+
+    permissions:
+      contents: write # Droit d'écrire sur le repo
+
+    steps:
+      # Récupère la branche deploy-dev
+      - uses: actions/checkout@v4
+        with:
+          ref: deploy-dev
+
+      # Met à jour version.txt avec le nom de la nouvelle image
+      # printf utilisé à la place de echo pour éviter les problèmes d'encodage
+      - name: Update version
+        run: printf "%s" "${{needs.versioning.outputs.imageName}}" > version.txt
+
+      # Commit et push sur deploy-dev
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add version.txt
+          git commit -m "Deploy ${{needs.versioning.outputs.version}}"
+          git push origin deploy-dev
