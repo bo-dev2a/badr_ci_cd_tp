@@ -5,6 +5,7 @@ on:
   push
 
 jobs:
+  # Calcule la version et le nom de l'image — tourne en parallèle des unit-tests
   versioning:
     runs-on: ubuntu-latest
     outputs:
@@ -24,10 +25,10 @@ jobs:
           echo "## 🔖 New version '$version'" >> $GITHUB_STEP_SUMMARY
           echo "## 📦 Image '$imageName'" >> $GITHUB_STEP_SUMMARY
 
-  # AJOUT — Tests unitaires avant de construire l'image
+  # Tests unitaires — tourne en parallèle de versioning
   unit-tests:
     runs-on: ubuntu-latest
-    needs: [versioning] # Attend que le versioning soit terminé
+    # Pas de needs — démarre immédiatement en parallèle de versioning
 
     steps:
       # Récupère le code source
@@ -42,14 +43,14 @@ jobs:
       - name: Run unit tests
         run: go test -count=1 .
 
-  # AJOUT — Build et push de l'image Docker
+  # Build et push de l'image Docker — attend versioning et unit-tests
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read    # Droit de lire le code source
       packages: write   # Droit d'écrire sur le registry
 
-    needs: [versioning, unit-tests] # Attend le versioning et les tests unitaires
+    needs: [versioning, unit-tests] # Attend les deux jobs parallèles
 
     steps:
       # Récupère le code source
@@ -59,11 +60,11 @@ jobs:
       # secrets.GITHUB_TOKEN est généré automatiquement par GitHub Actions
       - run: echo "${{secrets.GITHUB_TOKEN}}" | docker login ghcr.io -u "${{github.actor}}" --password-stdin
 
-      # AJOUT — Build de l'image avec le nom versionné produit par versioning
+      # Build de l'image avec le nom versionné produit par versioning
       - name: Build the image
         run: docker build -t ${{needs.versioning.outputs.imageName}} .
 
-      # AJOUT — Push de l'image vers GitHub Container Registry
+      # Push de l'image vers GitHub Container Registry
       - name: Push the image
         run: docker push ${{needs.versioning.outputs.imageName}}
 
@@ -89,13 +90,13 @@ jobs:
         with:
           go-version: '1.26'
 
-      # AJOUT — Lance les tests API contre le serveur en cours d'exécution
+      # Lance les tests API contre le serveur en cours d'exécution
       - name: API tests
         run: |
           echo "## 🌐 API tests using ${{needs.versioning.outputs.imageName}}" >> $GITHUB_STEP_SUMMARY
           go test ./test/apitests
 
-  # AJOUT — Déploiement continu via GitOps
+  # Déploiement continu via GitOps
   deploy-dev:
     runs-on: ubuntu-latest
     needs: [api-tests, versioning] # Attend que tous les tests soient passés
