@@ -1,1 +1,1 @@
-ghcr.io/bo-dev2a/badr_ci_cd_tp:d489a87
+ghcr.io/bo-dev2a/badr_ci_cd_tp:ca70efd
