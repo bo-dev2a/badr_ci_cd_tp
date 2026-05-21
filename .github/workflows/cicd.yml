@@ -24,36 +24,75 @@ jobs:
           echo "## 🔖 New version '$version'" >> $GITHUB_STEP_SUMMARY
           echo "## 📦 Image '$imageName'" >> $GITHUB_STEP_SUMMARY
 
-  build-and-push:
+# AJOUT (TP) — Job pour lancer les tests unitaires avant de construire l'image
+unit-tests:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    needs: [versioning]
+    needs: [versioning] # Attend que le versioning soit terminé
 
     steps:
+      # Récupère le code source
       - uses: actions/checkout@v4
-        
+
+      # Configure Go sur la machine virtuelle GitHub, ça c'est cool !
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # AJOUT — Lance les tests unitaires
+      - name: Run unit tests
+        run: go test -count=1 .
+
+
+build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read    # Droit de lire le code source
+      packages: write   # Droit d'écrire sur le registry
+
+    needs: [versioning, unit-tests] # Attend maintenant aussi les tests unitaires
+
+    steps:
+      # Récupère le code source sur la machine virtuelle GitHub
+      - uses: actions/checkout@v4
+      
+      # Authentification au registry GitHub avec un token automatique
+      # secrets.GITHUB_TOKEN est généré automatiquement par GitHub Actions
       - run: echo "${{secrets.GITHUB_TOKEN}}" | docker login ghcr.io -u "${{github.actor}}" --password-stdin
+      
+      # AJOUT (TP) — Build de l'image avec le nom versionné produit par le job versioning
+      # ex: ghcr.io/username/my-cats-app:a3f9c12
+      - name: Build the image
+        run: docker build -t ${{needs.versioning.outputs.imageName}} .
+
+      # AJOUT (TP) — Push de l'image vers GitHub Container Registry
+      - name: Push the image
+        run: docker push ${{needs.versioning.outputs.imageName}}
    
   
-  api-tests:
+api-tests:
     runs-on: ubuntu-latest
     needs: [build-and-push, versioning]
 
-    # Our API server, running in the background
-    # services:
-    #   backend:
-    #     image: ${{needs.versioning.outputs.imageName}}
-    #     credentials:
-    #       username: ${{github.actor}}
-    #       password: ${{secrets.GITHUB_TOKEN}}
-    #     ports:
-    #     - 8080:8080
+    # Le serveur backend tourne en arrière-plan pendant les tests
+    services:
+      backend:
+        image: ${{needs.versioning.outputs.imageName}}
+        credentials:
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+        ports:
+        - 8080:8080
 
     steps:
       - uses: actions/checkout@v4
+
+      # Configure Go sur la machine virtuelle
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Lance les tests API contre le serveur en cours d'exécution
       - name: API tests
         run: |
-          echo "## 🌐 API tests using ${{needs.v.outputs.imageName}}" >> $GITHUB_STEP_SUMMARY
+          echo "## 🌐 API tests using ${{needs.versioning.outputs.imageName}}" >> $GITHUB_STEP_SUMMARY
+          go test ./test/apitests
